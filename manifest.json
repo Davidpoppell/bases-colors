@@ -1,0 +1,9 @@
+{
+  "id": "bases-kanban-card-colors",
+  "name": "Bases Kanban Card Colors",
+  "version": "1.0.0",
+  "minAppVersion": "1.14.0",
+  "description": "Color Bases Kanban cards by due date or by any property, with due-date badges and an optional card filter.",
+  "author": "Dippy",
+  "isDesktopOnly": false
+}

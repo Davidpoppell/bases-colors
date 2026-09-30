@@ -1,0 +1,83 @@
+/* ---------- Cards ---------- */
+/* Each colored card gets its color in --koh-c */
+.bases-kanban-card.koh-overdue { --koh-c: var(--koh-color, #e5484d); }
+.bases-kanban-card.koh-today { --koh-c: var(--koh-today-color, #f76b15); }
+.bases-kanban-card.koh-soon { --koh-c: var(--koh-soon-color, #f5b400); }
+.bases-kanban-card.koh-rule { --koh-c: var(--koh-rule-color); }
+
+/* Tint: tinted background plus a thin border */
+body.koh-style-tint .bases-kanban-card:is(.koh-overdue, .koh-today, .koh-soon, .koh-rule) {
+  background-color: color-mix(in srgb, var(--koh-c) calc(var(--koh-alpha, 15) * 1%), transparent) !important;
+  border: 1px solid var(--koh-c) !important;
+}
+/* Border only */
+body.koh-style-border .bases-kanban-card:is(.koh-overdue, .koh-today, .koh-soon, .koh-rule) {
+  border: 2px solid var(--koh-c) !important;
+}
+/* Left stripe */
+body.koh-style-stripe .bases-kanban-card:is(.koh-overdue, .koh-today, .koh-soon, .koh-rule) {
+  box-shadow: inset 5px 0 0 var(--koh-c) !important;
+}
+
+/* Due badge, bottom-right corner */
+.koh-badge {
+  position: absolute; right: 8px; bottom: 8px;
+  padding: 1px 7px; border-radius: 999px;
+  font-size: var(--font-ui-smaller); line-height: 1.5; white-space: nowrap; pointer-events: none;
+  color: var(--text-muted); background: var(--background-modifier-hover);
+}
+.bases-kanban-card:is(.koh-overdue, .koh-today, .koh-soon, .koh-rule) > .koh-badge {
+  color: var(--text-normal); background: color-mix(in srgb, var(--koh-c) 30%, transparent);
+}
+
+/* ---------- Settings screen ---------- */
+/* Sections are separated by Obsidian-style headings and spacing, like Obsidian's own settings pages */
+.koh-section { margin-bottom: 20px; }
+/* Each section's rows form one panel: the theme's row background, rounded only at the panel's outer corners */
+.koh-group > .setting-item { position: relative; margin: 0 !important; }
+.koh-group > .setting-item:not(:first-child) { border-top-left-radius: 0 !important; border-top-right-radius: 0 !important; }
+.koh-group > .setting-item:not(:last-child) { border-bottom-left-radius: 0 !important; border-bottom-right-radius: 0 !important; }
+/* Thin inset line between rows */
+.koh-group > .setting-item + .setting-item { border-top: none !important; }
+.koh-group > .setting-item + .setting-item::before {
+  content: ''; position: absolute; top: 0; left: 16px; right: 16px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+/* Bold section titles */
+.koh-section > .setting-item-heading .setting-item-name {
+  font-weight: var(--font-bold, 700);
+  font-size: var(--font-ui-medium, 1.05em);
+  color: var(--text-normal);
+}
+.koh-section > .setting-item-heading { border-top: none; padding-bottom: 6px; }
+.koh-note .setting-item-description { padding-top: 0; }
+.koh-add-row .setting-item-info { display: none; }
+.koh-add-row .setting-item-control { justify-content: flex-start; }
+
+/* Pill boxes */
+.koh-pills {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+  min-height: var(--input-height);
+  padding: 4px 6px; border: 1px solid var(--background-modifier-border);
+  border-radius: var(--input-radius); background: var(--background-modifier-form-field);
+  cursor: text; box-sizing: border-box;
+}
+.koh-pill-setting .setting-item-control { flex: 0 0 auto; }
+.koh-pill-setting .koh-pills { width: 260px; }
+.koh-pill-list { display: contents; }
+.koh-pill-input { flex: 1 1 7em; min-width: 7em; border: none !important; background: transparent !important; box-shadow: none !important; padding: 0 4px; }
+
+/* Rule and condition rows */
+.setting-item.koh-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 6px; }
+.koh-row input.koh-row-prop { width: 9em; }
+.koh-row input.koh-row-value { width: 10em; }
+.koh-row .koh-row-pills { flex: 1 1 14em; min-width: 14em; }
+.koh-tools { display: flex; align-items: center; margin-left: auto; }
+.koh-word { font-size: var(--font-ui-small); color: var(--text-muted); }
+.koh-check { display: inline-flex; align-items: center; gap: 4px; font-size: var(--font-ui-smaller); color: var(--text-muted); cursor: pointer; }
+.koh-days { width: 4em; }
+.koh-row select.dropdown { width: auto; max-width: 10em; }
+.koh-row-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; padding-left: 2.6em; }
+.koh-on { margin-left: 10px; }
+.koh-row-foot .koh-scope { flex: 1 1 12em; min-width: 12em; }
+.bases-kanban-card.koh-positioned { position: relative; }
