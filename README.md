@@ -2,7 +2,7 @@
 
 Color the cards in Obsidian's built-in **Bases Kanban view** by due date or by any property, and show how long until each task is due.
 
-<!-- Add a screenshot here: ![Kanban board with colored cards](screenshot.png) -->
+   ![A Bases Kanban board with overdue, due-today and due-soon cards colored, each with a due badge](https://raw.githubusercontent.com/Davidpoppell/bases-kanban-card-colors/main/images/board.png)
 
 ## Features
 
@@ -20,6 +20,8 @@ Color the cards in Obsidian's built-in **Bases Kanban view** by due date or by a
 - The card title (file name) must be visible on the cards. The plugin uses it to match each card to its note.
 
 ## Settings
+
+   <img src="https://raw.githubusercontent.com/Davidpoppell/bases-kanban-card-colors/main/images/settings.png" alt="Plugin settings" width="600">
 
 ### Rules by due date
 | Setting | What it does |
