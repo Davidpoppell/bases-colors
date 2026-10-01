@@ -1,55 +1,148 @@
-/* ---------- Cards ---------- */
-/* Each colored card gets its color in --koh-c */
-.bases-kanban-card.koh-overdue { --koh-c: var(--koh-color, #e5484d); }
-.bases-kanban-card.koh-today { --koh-c: var(--koh-today-color, #f76b15); }
-.bases-kanban-card.koh-soon { --koh-c: var(--koh-soon-color, #f5b400); }
-.bases-kanban-card.koh-rule { --koh-c: var(--koh-rule-color); }
+/* ---------- Cards/rows ---------- */
+/* Tints are the color blended with plain white (black in dark mode), not with the theme's own colors,
+   so cards/rows read as clearly red/orange/yellow on any theme and match across views */
+body { --koh-base: white; }
+body.theme-dark { --koh-base: black; }
+/* Each colored card/row gets the class .koh-hl and its color in --koh-c */
+.koh-overdue { --koh-c: var(--koh-color, #e5484d); }
+.koh-today { --koh-c: var(--koh-today-color, #f76b15); }
+.koh-soon { --koh-c: var(--koh-soon-color, #f5b400); }
+.koh-rule { --koh-c: var(--koh-rule-color); }
 
-/* Tint: tinted background plus a thin border */
-body.koh-style-tint .bases-kanban-card:is(.koh-overdue, .koh-today, .koh-soon, .koh-rule) {
-  background-color: color-mix(in srgb, var(--koh-c) calc(var(--koh-alpha, 15) * 1%), transparent) !important;
-  border: 1px solid var(--koh-c) !important;
+/* Kanban and Cards views */
+/* Tint: tinted background plus a 2px border */
+body.koh-style-tint :is(.bases-kanban-card, .bases-cards-item).koh-hl {
+  background-color: color-mix(in srgb, var(--koh-c) calc(var(--koh-alpha, 15) * 1%), var(--koh-base)) !important;
+  border: 2px solid var(--koh-c) !important;
 }
 /* Border only */
-body.koh-style-border .bases-kanban-card:is(.koh-overdue, .koh-today, .koh-soon, .koh-rule) {
+body.koh-style-border :is(.bases-kanban-card, .bases-cards-item).koh-hl {
   border: 2px solid var(--koh-c) !important;
 }
 /* Left stripe */
-body.koh-style-stripe .bases-kanban-card:is(.koh-overdue, .koh-today, .koh-soon, .koh-rule) {
+body.koh-style-stripe :is(.bases-kanban-card, .bases-cards-item).koh-hl {
   box-shadow: inset 5px 0 0 var(--koh-c) !important;
 }
 
-/* Due badge, bottom-right corner */
+/* Table rows: tinted cells (solid, so a pinned column still covers what scrolls under it),
+   plus a stripe on the first cell in every style */
+body.koh-style-tint .bases-tr.koh-hl > .bases-td {
+  background-color: color-mix(in srgb, var(--koh-c) calc(var(--koh-alpha, 15) * 1%), var(--koh-base)) !important;
+}
+body.koh-style-border .bases-tr.koh-hl > .bases-td {
+  box-shadow: inset 0 2px 0 var(--koh-c), inset 0 -2px 0 var(--koh-c);
+}
+.bases-tr.koh-hl > .bases-td:first-child {
+  box-shadow: inset 4px 0 0 var(--koh-c);
+}
+body.koh-style-border .bases-tr.koh-hl > .bases-td:first-child {
+  box-shadow: inset 4px 0 0 var(--koh-c), inset 0 2px 0 var(--koh-c), inset 0 -2px 0 var(--koh-c);
+}
+
+/* List items (shadows instead of borders, so lines don't shift) */
+.bases-list-item.koh-hl { border-radius: var(--radius-s, 4px); }
+body.koh-style-tint .bases-list-item.koh-hl {
+  background-color: color-mix(in srgb, var(--koh-c) calc(var(--koh-alpha, 15) * 1%), var(--koh-base));
+  box-shadow: inset 0 0 0 2px var(--koh-c);
+}
+body.koh-style-border .bases-list-item.koh-hl { box-shadow: inset 0 0 0 2px var(--koh-c); }
+body.koh-style-stripe .bases-list-item.koh-hl { box-shadow: inset 4px 0 0 var(--koh-c); }
+
+/* Due badge: a card's bottom-right corner (cards/cells that are position:static get .koh-positioned) */
+.koh-positioned { position: relative; }
 .koh-badge {
   position: absolute; right: 8px; bottom: 8px;
   padding: 1px 7px; border-radius: 999px;
   font-size: var(--font-ui-smaller); line-height: 1.5; white-space: nowrap; pointer-events: none;
   color: var(--text-muted); background: var(--background-modifier-hover);
 }
-.bases-kanban-card:is(.koh-overdue, .koh-today, .koh-soon, .koh-rule) > .koh-badge {
+.koh-hl .koh-badge {
   color: var(--text-normal); background: color-mix(in srgb, var(--koh-c) 30%, transparent);
 }
+/* Tables: at the right end of the name cell; the name stops short of it */
+.koh-badge.koh-badge-cell { bottom: auto; top: 50%; right: 6px; transform: translateY(-50%); line-height: 1.4; }
+.bases-td.koh-has-badge > .bases-table-cell {
+  padding-inline-end: var(--koh-badge-w) !important; box-sizing: border-box;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bases-td.koh-has-badge > .bases-table-cell > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Lists: at the end of the line */
+.koh-badge.koh-badge-inline { position: static; display: inline-block; margin-inline-start: 8px; vertical-align: middle; line-height: 1.4; }
+
+/* ---------- Property/tag colors ---------- */
+.multi-select-pill.koh-pill {
+  background-color: var(--koh-pill-bg) !important;
+  color: var(--koh-pill-fg) !important;
+  --pill-color: var(--koh-pill-fg); --pill-color-hover: var(--koh-pill-fg);
+  --pill-color-remove: var(--koh-pill-fg); --pill-color-remove-hover: var(--koh-pill-fg);
+}
+.multi-select-pill.koh-pill .multi-select-pill-content,
+.multi-select-pill.koh-pill .multi-select-pill-remove-button,
+.multi-select-pill.koh-pill .multi-select-pill-remove-button svg { color: var(--koh-pill-fg) !important; --icon-color: var(--koh-pill-fg); }
+.multi-select-pill.koh-pill .multi-select-pill-remove-button svg,
+.multi-select-pill.koh-pill .multi-select-pill-remove-button svg * { stroke: currentColor !important; }
+/* Cards, Kanban and List views show values as plain text, so give colored ones a pill shape */
+.value-list-element.koh-pill {
+  background-color: var(--koh-pill-bg) !important;
+  color: var(--koh-pill-fg) !important;
+  display: inline-flex; align-items: center; line-height: 1.4;
+  padding: 1px 8px; border-radius: var(--pill-radius, 12px); margin: 0 4px 4px 0;
+}
+/* Compact pill shape */
+body.koh-pill-shape .multi-select-pill.koh-pill {
+  --pill-padding-x: 0px;
+  padding: 2px 6px !important; border-radius: 4px !important; gap: 3px !important; align-items: center !important;
+}
+body.koh-pill-shape .multi-select-pill.koh-pill .multi-select-pill-content { line-height: 1 !important; }
+body.koh-pill-shape .value-list-element.koh-pill { padding: 2px 6px; border-radius: 4px; }
 
 /* ---------- Settings screen ---------- */
-/* Sections are separated by Obsidian-style headings and spacing, like Obsidian's own settings pages */
-.koh-section { margin-bottom: 20px; }
-/* Each section's rows form one panel: the theme's row background, rounded only at the panel's outer corners */
-.koh-group > .setting-item { position: relative; margin: 0 !important; }
-.koh-group > .setting-item:not(:first-child) { border-top-left-radius: 0 !important; border-top-right-radius: 0 !important; }
-.koh-group > .setting-item:not(:last-child) { border-bottom-left-radius: 0 !important; border-bottom-right-radius: 0 !important; }
-/* Thin inset line between rows */
-.koh-group > .setting-item + .setting-item { border-top: none !important; }
-.koh-group > .setting-item + .setting-item::before {
-  content: ''; position: absolute; top: 0; left: 16px; right: 16px;
-  border-top: 1px solid var(--background-modifier-border);
+.koh-greeting { font-size: var(--font-ui-medium); color: var(--text-muted); margin: 0 4px 14px; }
+
+/* Top-level groups (Card/row colors, Property/tag colors): outlined box, large heading, fades while switched off */
+.koh-top {
+  margin-bottom: 24px; padding: 6px 16px 12px;
+  border: 1.5px solid var(--text-normal); border-radius: var(--radius-l, 12px);
 }
-/* Bold section titles */
+.koh-top.koh-collapsed { padding-bottom: 6px; }
+.koh-top > .koh-top-head {
+  border: none !important; box-shadow: none !important; background: transparent !important;
+  padding-bottom: 8px; margin-bottom: 10px;
+}
+.koh-top > .koh-top-head .setting-item-name { font-size: var(--font-ui-large, 1.3em); font-weight: var(--font-bold, 700); color: var(--text-normal); }
+.koh-top > .koh-top-head .koh-chevron svg { width: 18px; height: 18px; }
+.koh-top.koh-collapsed > .koh-top-head { margin-bottom: 0; }
+.koh-top.koh-collapsed > .koh-top-head .koh-chevron { transform: rotate(-90deg); }
+.koh-top.koh-collapsed > .koh-top-body { display: none; }
+.koh-top-body.koh-off { opacity: 0.5; transition: opacity 120ms ease; }
+.koh-top-body > .koh-section:last-child { margin-bottom: 0; }
+
+/* Sections inside a group: bold heading, then rows that share one panel */
+.koh-section { margin-bottom: 20px; }
+.koh-section.koh-collapsed { margin-bottom: 8px; }
+.koh-section > .setting-item-heading { border-top: none; padding-bottom: 6px; }
 .koh-section > .setting-item-heading .setting-item-name {
   font-weight: var(--font-bold, 700);
   font-size: var(--font-ui-medium, 1.05em);
   color: var(--text-normal);
 }
-.koh-section > .setting-item-heading { border-top: none; padding-bottom: 6px; }
+.koh-section.koh-collapsed > .setting-item-heading .koh-chevron { transform: rotate(-90deg); }
+.koh-section.koh-collapsed > .koh-group { display: none; }
+
+/* Collapse chevrons (sections and groups) */
+.koh-section-head .setting-item-info { cursor: pointer; user-select: none; }
+.koh-chevron { display: inline-flex; vertical-align: middle; margin-right: 4px; color: var(--text-muted); transition: transform 120ms ease; }
+.koh-chevron svg { width: 16px; height: 16px; }
+
+/* Panel rows: rounded only at the panel's outer corners, thin inset line between rows */
+.koh-group > .setting-item { position: relative; margin: 0 !important; }
+.koh-group > .setting-item:not(:first-child) { border-top-left-radius: 0 !important; border-top-right-radius: 0 !important; }
+.koh-group > .setting-item:not(:last-child) { border-bottom-left-radius: 0 !important; border-bottom-right-radius: 0 !important; }
+.koh-group > .setting-item + .setting-item { border-top: none !important; }
+.koh-group > .setting-item + .setting-item::before {
+  content: ''; position: absolute; top: 0; left: 16px; right: 16px;
+  border-top: 1px solid var(--background-modifier-border);
+}
 .koh-note .setting-item-description { padding-top: 0; }
 .koh-add-row .setting-item-info { display: none; }
 .koh-add-row .setting-item-control { justify-content: flex-start; }
@@ -72,12 +165,69 @@ body.koh-style-stripe .bases-kanban-card:is(.koh-overdue, .koh-today, .koh-soon,
 .koh-row input.koh-row-prop { width: 9em; }
 .koh-row input.koh-row-value { width: 10em; }
 .koh-row .koh-row-pills { flex: 1 1 14em; min-width: 14em; }
+/* Dropdowns only as wide as their text, text on the left */
+.koh-row select.dropdown { width: fit-content !important; min-width: 0 !important; max-width: 10em; text-align: left; text-align-last: left; padding-right: 26px; flex: 0 0 auto; }
+.koh-row-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; padding-left: 2.6em; }
+.koh-row-foot .koh-scope { flex: 1 1 12em; min-width: 12em; }
 .koh-tools { display: flex; align-items: center; margin-left: auto; }
 .koh-word { font-size: var(--font-ui-small); color: var(--text-muted); }
+.koh-on { margin-left: 10px; }
 .koh-check { display: inline-flex; align-items: center; gap: 4px; font-size: var(--font-ui-smaller); color: var(--text-muted); cursor: pointer; }
 .koh-days { width: 4em; }
-.koh-row select.dropdown { width: auto; max-width: 10em; }
-.koh-row-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; padding-left: 2.6em; }
-.koh-on { margin-left: 10px; }
-.koh-row-foot .koh-scope { flex: 1 1 12em; min-width: 12em; }
-.bases-kanban-card.koh-positioned { position: relative; }
+
+/* Color picker: a swatch button that opens tone tabs and a grid of swatches */
+.koh-color { position: relative; display: inline-flex; flex: 0 0 auto; }
+.koh-swatch {
+  box-sizing: border-box; cursor: pointer; position: relative; user-select: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 6px;
+}
+.koh-swatch:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+/* Card swatches look like a colored card: tint plus border (a little stronger than the card, so colors are easy to tell apart) */
+.koh-color-card .koh-swatch {
+  background: color-mix(in srgb, var(--koh-c) calc(max(var(--koh-alpha, 15), 35) * 1%), var(--koh-base));
+  border: 2px solid var(--koh-c);
+}
+/* Pill swatches look like a colored value pill */
+.koh-color-pill .koh-swatch {
+  width: 34px; height: 22px; border-radius: 4px;
+  background: var(--koh-c); color: var(--koh-fg);
+  font-size: var(--font-ui-smaller); font-weight: var(--font-semibold, 600);
+}
+.koh-swatches {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: var(--layer-popover, 30);
+  display: flex; flex-direction: column; gap: 8px; padding: 8px;
+  background: var(--background-primary); border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px); box-shadow: var(--shadow-s);
+}
+/* Rule colors sit mid-row, so their picker opens to the right */
+.koh-row .koh-color-card .koh-swatches { right: auto; left: 0; }
+.koh-swatch-grid { display: grid; grid-template-columns: repeat(5, auto); gap: 6px; justify-content: start; }
+/* Tone tabs: a small segmented control */
+.koh-tones { display: flex; gap: 2px; padding: 2px; border-radius: var(--radius-s, 6px); background: var(--background-modifier-hover); }
+.koh-tone {
+  flex: 1 1 auto; padding: 2px 8px; border-radius: var(--radius-s, 4px); text-align: center; white-space: nowrap;
+  font-size: var(--font-ui-smaller); color: var(--text-muted); cursor: pointer; user-select: none;
+}
+.koh-tone:hover { color: var(--text-normal); }
+.koh-tone.is-active { background: var(--background-primary); color: var(--text-normal); box-shadow: var(--shadow-s); }
+.koh-tone:focus-visible { outline: 2px solid var(--interactive-accent); }
+/* A short note under the tabs; width 0 + min-width 100% keeps it from widening the popup */
+.koh-tone-note { width: 0; min-width: 100%; text-align: left; font-size: var(--font-ui-smaller); color: var(--text-muted); line-height: 1.35; }
+.koh-swatches .koh-swatch:hover { transform: scale(1.1); }
+.koh-swatches .koh-swatch.is-selected { box-shadow: 0 0 0 2px var(--background-primary), 0 0 0 4px var(--text-normal); }
+/* Custom: a rainbow swatch that opens the full color wheel */
+.koh-swatches .koh-swatch-custom { background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red) !important; border: none !important; }
+.koh-swatch-custom input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; padding: 0; border: none; }
+
+/* View switches: pills you click on or off */
+.koh-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.koh-chip {
+  padding: 3px 12px; border-radius: 999px; cursor: pointer; user-select: none;
+  font-size: var(--font-ui-small); color: var(--text-muted);
+  border: 1px solid var(--background-modifier-border); background: var(--background-primary);
+}
+.koh-chip:hover { color: var(--text-normal); }
+.koh-chip.is-on { color: var(--text-on-accent); background: var(--interactive-accent); border-color: var(--interactive-accent); }
+.koh-chip:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.koh-views-panel { margin-bottom: 16px; }

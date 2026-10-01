@@ -1,35 +1,119 @@
 const {
-  Plugin, PluginSettingTab, Setting, Notice, AbstractInputSuggest, TextComponent, DropdownComponent, ColorComponent,
+  Plugin, PluginSettingTab, Setting, Notice, AbstractInputSuggest, TextComponent, DropdownComponent,
   ExtraButtonComponent, setIcon, debounce, moment,
 } = require('obsidian');
 
 const DEFAULTS = {
   // Card filter: which cards can be colored at all
-  filterEnabled: false,
   filterMatch: 'all', // 'all' or 'any'
   filters: [], // [{ prop, op, value }]
   // Due dates
   dateProperties: 'Due',
   overdueEnabled: true,
-  color: '#e5484d', // overdue
+  color: 'red', // overdue (a theme color name, or any #hex color)
   todayEnabled: true,
-  todayColor: '#f76b15',
+  todayColor: 'orange',
   soonEnabled: true,
-  soonColor: '#f5b400',
+  soonColor: 'yellow',
   soonDays: 3,
   dateScope: [], // bases where due-date colors apply; empty = everywhere
   // Property rules: [{ prop, op, value, color, useFilter, scope }]
   rules: [],
   rulesFirst: false, // false = due dates win over rules
   enabled: true, // master switch, also toggled by a command
-  badge: true, // "Due: 3 days" label in the card's bottom-right corner
+  views: ['kanban'], // view types whose cards/rows get colored: 'kanban', 'cards', 'table', 'list'
+  badge: true, // "Due: 3 days" label on each colored card/row
   highlightStyle: 'tint', // 'tint', 'border' or 'stripe'
   opacity: 15,
+  collapsed: {}, // settings sections the user has collapsed, by section key
+  // Property/tag colors: the value pills (like Client or Owner) in Bases views and note properties
+  pillsEnabled: true,
+  pillAuto: true, // give every value a consistent color based on its text
+  pillColors: [], // custom colors: [{ prop, value, color }]; empty prop = any property
+  pillProps: true, // also color pills in the Properties panel at the top of notes
+  pillShape: true, // compact pill shape instead of the theme's default
 };
+
+// Pills in Bases views (tables use multi-select pills; Cards, Kanban and List views use value-list elements)
+const PILL_SEL = '.multi-select-pill, .bases-cards-line .value-list-element, .bases-kanban-card-line .value-list-element, .bases-list-property .value-list-element';
+const PROP_PILL_SEL = '.metadata-property .multi-select-pill';
+// Cards/rows in each view type ("[draggable]" skips the invisible sizing card in Cards view)
+const VIEW_TYPES = { kanban: 'Kanban', cards: 'Cards', table: 'Table', list: 'List' };
+const ITEM_SEL = '.bases-kanban-card, .bases-cards-item[draggable], .bases-tbody > .bases-tr, .bases-list-item';
+const itemType = (el) => {
+  const c = el.classList;
+  return c.contains('bases-kanban-card') ? 'kanban' : c.contains('bases-cards-item') ? 'cards' : c.contains('bases-tr') ? 'table' : 'list';
+};
+
+// A value's automatic color, worked out from its text so the same value is always the same color
+const autoColor = (text) => {
+  const t = text.replace(/\s+/g, '').replace(/[^\w\u00C0-\u017F-]/g, '');
+  if (!t) return null;
+  let h = 0;
+  for (let i = 0; i < t.length; i++) { h = (h << 5) - h + t.charCodeAt(i); h = h & h; }
+  const hex = (n) => (80 + Math.abs(n) % 120).toString(16).padStart(2, '0');
+  return '#' + hex(h) + hex(h >> 8) + hex(h >> 16);
+};
+// Dark or light text, whichever reads better on the pill color
+const textOn = (hex) => {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return 'white';
+  const n = parseInt(m[1], 16);
+  return (((n >> 16) & 255) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000 >= 150 ? '#1e1e1e' : 'white';
+};
+// Theme colors are saved by name ("red", or "muted-red" for a tone), so they follow the theme and light/dark mode
+const THEME_COLORS = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple', 'pink'];
+// Tones: the theme color as is, or mixed with gray, white or black (the number is how much theme color is kept)
+const TONES = { vibrant: 'Vibrant', muted: 'Muted', pastel: 'Pastel', deep: 'Deep', distinct: 'Distinct' };
+// The "Distinct" tab: the Okabe-Ito palette, chosen to stay easy to tell apart (including with color blindness).
+// Saved as fixed colors, since they only work as a set exactly as designed.
+const DISTINCT = {
+  '#e69f00': 'Orange', '#56b4e9': 'Sky blue', '#009e73': 'Bluish green', '#f0e442': 'Yellow',
+  '#0072b2': 'Blue', '#d55e00': 'Vermillion', '#cc79a7': 'Reddish purple', '#000000': 'Black',
+};
+const distinctName = (c) => DISTINCT[String(c || '').toLowerCase()];
+const TONE_MIX = { muted: ['#808080', 55], pastel: ['white', 45], deep: ['black', 65] };
+const THEME_RE = new RegExp('^(?:(' + Object.keys(TONE_MIX).join('|') + ')-)?(' + THEME_COLORS.join('|') + ')$');
+const parseTheme = (c) => { const m = THEME_RE.exec(c || ''); return m ? { tone: m[1] || 'vibrant', name: m[2] } : null; };
+const themeColor = (tone, name) => (tone === 'vibrant' ? name : tone + '-' + name);
+const isThemeColor = (c) => !!parseTheme(c);
+const cssColor = (c) => {
+  const t = parseTheme(c);
+  if (!t) return c;
+  const base = 'var(--color-' + t.name + ')';
+  const mix = TONE_MIX[t.tone];
+  return mix ? 'color-mix(in srgb, ' + base + ' ' + mix[1] + '%, ' + mix[0] + ')' : base;
+};
+const colorLabel = (c) => {
+  const t = parseTheme(c);
+  if (!t) return distinctName(c) || 'Custom color';
+  const label = (t.tone === 'vibrant' ? '' : TONES[t.tone] + ' ') + t.name;
+  return label.charAt(0).toUpperCase() + label.slice(1);
+};
+// The #hex a color shows as right now (theme colors are looked up from the current theme)
+const realColor = (c) => {
+  if (!isThemeColor(c)) return c;
+  const probe = document.body.createDiv();
+  probe.style.display = 'none';
+  probe.style.color = cssColor(c);
+  const v = getComputedStyle(probe).color;
+  probe.remove();
+  // "rgb(229, 72, 77)", or "color(srgb 0.9 0.28 0.3)" for mixed tones
+  let rgb = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(v);
+  if (rgb) rgb = rgb.slice(1, 4).map(Number);
+  else { const m = /color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/.exec(v); rgb = m && m.slice(1, 4).map((n) => Math.round(n * 255)); }
+  return rgb ? '#' + rgb.map((n) => Math.min(255, n).toString(16).padStart(2, '0')).join('') : '#888888';
+};
+// The first theme color not already used, so new rows start with a distinct color
+const nextColor = (used) => THEME_COLORS.find((c) => !used.includes(c)) || THEME_COLORS[used.length % THEME_COLORS.length];
+// A pill's background and readable text color
+const pillPaint = (c) => ({ bg: cssColor(c), fg: textOn(realColor(c)) });
+const pillText = (el) => ((el.querySelector('.multi-select-pill-content') || el).textContent || '').trim();
 
 // Due-date states, strongest first
 const DATE_STATES = ['koh-overdue', 'koh-today', 'koh-soon'];
 const ALL_CLASSES = [...DATE_STATES, 'koh-rule'];
+const MARK = 'koh-hl'; // on every colored card/row, so styles can target them all at once
 
 const OPS = {
   is: 'is',
@@ -116,24 +200,26 @@ module.exports = class BasesKanbanCardColors extends Plugin {
   async onload() {
     const data = (await this.loadData()) || {};
     this.settings = Object.assign({}, DEFAULTS, data);
-    if (!Array.isArray(this.settings.filters)) this.settings.filters = [];
-    if (!Array.isArray(this.settings.rules)) this.settings.rules = [];
+    for (const k of ['filters', 'rules', 'pillColors']) if (!Array.isArray(this.settings[k])) this.settings[k] = [];
+    if (!Array.isArray(this.settings.views)) this.settings.views = [...DEFAULTS.views];
+    if (!this.settings.collapsed || typeof this.settings.collapsed !== 'object') this.settings.collapsed = {};
     this.index = null;
     this.ctx = null; // prepared settings, rebuilt when settings or the date change
-    this.styleCache = new Map(); // card title -> color decision, cleared when notes or settings change
-    // Watched elements: a Bases tab's view, or the wrapper around a board embedded in a note
+    this.pillMap = null; // prepared pill colors, rebuilt when settings change
+    this.styleCache = new Map(); // board + note -> color decision, cleared when notes or settings change
+    // Watched elements: a Bases tab, a base embedded in a note, or a note's Properties panel
     this.watched = new Map();
-    this.boardInfo = new Map(); // watched element -> the Bases tab or embed it belongs to
+    this.boardInfo = new Map(); // watched element -> what it is (Bases tab, embed or Properties panel)
     this.applyColors();
     this.addSettingTab(new KohSettingTab(this.app, this));
     this.addCommand({
       id: 'toggle-card-coloring',
-      name: 'Turn card coloring on or off',
+      name: 'Turn card/row coloring on or off',
       callback: () => {
         this.settings.enabled = !this.settings.enabled;
         this.saveSettings();
         this.scanAll(); // apply right away instead of after the usual pause
-        new Notice(this.settings.enabled ? 'Kanban card coloring on' : 'Kanban card coloring off');
+        new Notice(this.settings.enabled ? 'Card/row coloring on' : 'Card/row coloring off');
       },
     });
 
@@ -151,15 +237,18 @@ module.exports = class BasesKanbanCardColors extends Plugin {
       this.syncBoards();
     });
     // A note's properties changed: forget only that note's saved color
+    // (Kanban/Cards remember notes by name, tables/lists by path)
     this.registerEvent(this.app.metadataCache.on('changed', (file) => {
-      const end = '\n' + file.basename;
-      for (const k of this.styleCache.keys()) if (k.endsWith(end)) this.styleCache.delete(k);
+      const byName = '\n' + file.basename, byPath = '\n' + file.path;
+      for (const k of this.styleCache.keys()) if (k.endsWith(byName) || k.endsWith(byPath)) this.styleCache.delete(k);
       this.refresh();
     }));
     // Boards appear and disappear when tabs, layouts or open notes change
     this.registerEvent(this.app.workspace.on('layout-change', () => this.resync()));
     this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.resync()));
     this.registerEvent(this.app.workspace.on('file-open', () => this.resync()));
+    // A new theme or light/dark mode changes theme colors, so pills need fresh text colors
+    this.registerEvent(this.app.workspace.on('css-change', () => { this.pillMap = null; this.refresh(); }));
     // Re-check every 5 minutes so colors move along after midnight without a reload
     this.registerInterval(window.setInterval(() => { this.syncBoards(); }, 5 * 60 * 1000));
   }
@@ -168,18 +257,25 @@ module.exports = class BasesKanbanCardColors extends Plugin {
     this.flushSave();
     for (const obs of this.watched.values()) obs.disconnect();
     this.watched.clear();
-    document.querySelectorAll(ALL_CLASSES.map((c) => '.' + c).join(',')).forEach((el) => {
-      el.classList.remove(...ALL_CLASSES);
+    document.querySelectorAll('.' + MARK).forEach((el) => {
+      el.classList.remove(MARK, ...ALL_CLASSES);
       el.style.removeProperty('--koh-rule-color');
     });
     document.querySelectorAll('.koh-badge').forEach((el) => el.remove());
+    document.querySelectorAll('.koh-has-badge').forEach((el) => { el.removeClass('koh-has-badge'); el.style.removeProperty('--koh-badge-w'); });
     document.querySelectorAll('.koh-positioned').forEach((el) => el.removeClass('koh-positioned'));
-    document.body.classList.remove('koh-style-tint', 'koh-style-border', 'koh-style-stripe');
+    document.querySelectorAll('.koh-pill').forEach((el) => {
+      el.removeClass('koh-pill');
+      el.style.removeProperty('--koh-pill-bg');
+      el.style.removeProperty('--koh-pill-fg');
+    });
+    document.body.classList.remove('koh-pill-shape', 'koh-style-tint', 'koh-style-border', 'koh-style-stripe');
     for (const v of ['--koh-color', '--koh-today-color', '--koh-soon-color', '--koh-alpha']) document.body.style.removeProperty(v);
   }
 
   saveSettings() {
     this.ctx = null;
+    this.pillMap = null;
     this.styleCache.clear();
     this.applyColors(); // date colors update instantly through CSS variables
     this.refresh(); // recheck cards once adjusting pauses
@@ -193,16 +289,17 @@ module.exports = class BasesKanbanCardColors extends Plugin {
   applyColors() {
     const s = this.settings;
     const st = document.body.style;
-    st.setProperty('--koh-color', s.color);
-    st.setProperty('--koh-today-color', s.todayColor);
-    st.setProperty('--koh-soon-color', s.soonColor);
+    st.setProperty('--koh-color', cssColor(s.color));
+    st.setProperty('--koh-today-color', cssColor(s.todayColor));
+    st.setProperty('--koh-soon-color', cssColor(s.soonColor));
     st.setProperty('--koh-alpha', String(s.opacity));
     const b = document.body.classList;
     b.remove('koh-style-tint', 'koh-style-border', 'koh-style-stripe');
     b.add('koh-style-' + (['tint', 'border', 'stripe'].includes(s.highlightStyle) ? s.highlightStyle : 'tint'));
+    b.toggle('koh-pill-shape', !!(s.pillsEnabled && s.pillShape));
   }
 
-  // Find every open Kanban board and watch only those parts of the screen
+  // Find every open base (and, for pill colors, note Properties panels) and watch only those parts of the screen
   syncBoards() {
     const targets = new Set();
     this.app.workspace.iterateAllLeaves((leaf) => {
@@ -213,12 +310,16 @@ module.exports = class BasesKanbanCardColors extends Plugin {
         targets.add(root);
         this.boardInfo.set(root, { leaf });
       } else {
-        // A note with an embedded board: watch just the embed, not the editor
-        root.querySelectorAll('.bases-kanban-container').forEach((board) => {
+        // A note with an embedded base: watch just the embed, not the editor
+        root.querySelectorAll('.bases-view').forEach((board) => {
           const el = board.closest('.internal-embed, .bases-embed, .cm-embed-block') || board.parentElement;
           targets.add(el);
           this.boardInfo.set(el, { embed: el });
         });
+        // The note's Properties panel, for pill colors
+        const s = this.settings;
+        const props = s.pillsEnabled && s.pillProps ? root.querySelector('.metadata-container') : null;
+        if (props) { targets.add(props); this.boardInfo.set(props, { props: true }); }
       }
     });
 
@@ -243,6 +344,7 @@ module.exports = class BasesKanbanCardColors extends Plugin {
   // Recolor exactly the cards that changed, right away, before the screen repaints.
   onMutations(muts, el) {
     const cards = new Set();
+    const pills = new Set();
     let external = false;
     for (const m of muts) {
       // Skip changes the plugin made itself (adding or updating a badge). Badge removals are not skipped:
@@ -250,13 +352,21 @@ module.exports = class BasesKanbanCardColors extends Plugin {
       if (isBadge(m.target) || (m.removedNodes.length === 0 && m.addedNodes.length > 0
         && [...m.addedNodes].every(isBadge))) continue;
       external = true;
-      const card = m.target.closest ? m.target.closest('.bases-kanban-card') : null;
+      const card = m.target.closest ? m.target.closest(ITEM_SEL) : null;
       if (card) cards.add(card);
+      const pill = m.target.closest ? m.target.closest('.multi-select-pill, .value-list-element') : null;
+      if (pill) pills.add(pill);
       for (const n of m.addedNodes) {
         if (n.nodeType !== 1) continue;
-        if (n.classList.contains('bases-kanban-card')) cards.add(n);
-        else n.querySelectorAll('.bases-kanban-card').forEach((c) => cards.add(c));
+        if (n.matches(ITEM_SEL)) cards.add(n);
+        else n.querySelectorAll(ITEM_SEL).forEach((c) => cards.add(c));
+        if (n.matches('.multi-select-pill, .value-list-element')) pills.add(n);
+        else n.querySelectorAll('.multi-select-pill, .value-list-element').forEach((x) => pills.add(x));
       }
+    }
+    if (pills.size) {
+      const inProps = !!(this.boardInfo.get(el) || {}).props;
+      pills.forEach((x) => { if (x.matches(inProps ? PROP_PILL_SEL : PILL_SEL)) this.paintPill(x); });
     }
     if (cards.size) {
       const ctx = this.getContext();
@@ -269,7 +379,7 @@ module.exports = class BasesKanbanCardColors extends Plugin {
   // Which base a watched board shows, as a normalized name
   where(el) {
     const info = this.boardInfo.get(el);
-    if (!info) return null;
+    if (!info || info.props) return null; // the Properties panel isn't a board
     if (info.leaf) {
       const v = info.leaf.view;
       const st = (info.leaf.getViewState() || {}).state || {};
@@ -288,7 +398,7 @@ module.exports = class BasesKanbanCardColors extends Plugin {
     return this.ctx;
   }
 
-  // Map file names to files (cards show the file name as their title)
+  // Map file names to files (Kanban and Cards show the file name as their title)
   getIndex() {
     if (!this.index) {
       this.index = new Map();
@@ -304,8 +414,8 @@ module.exports = class BasesKanbanCardColors extends Plugin {
   makeContext() {
     const s = this.settings;
     const today = todayNum();
-    const days = Math.max(0, parseInt(s.soonDays, 10) || 0);
-    const filters = s.filterEnabled ? s.filters.map(compile).filter(Boolean) : [];
+    const soonDays = Math.max(0, parseInt(s.soonDays, 10) || 0);
+    const filters = s.filters.map(compile).filter(Boolean); // no conditions = no filter
     const any = s.filterMatch === 'any';
     const dateProps = splitList(s.dateProperties);
     return {
@@ -315,17 +425,36 @@ module.exports = class BasesKanbanCardColors extends Plugin {
       todayEnabled: s.todayEnabled,
       soonEnabled: s.soonEnabled,
       today,
-      soonLimit: days > 0 ? today + days : null, // null = any future date
+      soonLimit: soonDays > 0 ? today + soonDays : null, // null = any future date
       dateScope: parseScope(s.dateScope),
       rules: s.rules
-        .map((r) => ({ test: compile(r), color: r.color, useFilter: r.useFilter !== false, scope: parseScope(r.scope) }))
+        .map((r) => ({ test: compile(r), color: cssColor(r.color), useFilter: r.useFilter !== false, scope: parseScope(r.scope) }))
         .filter((r) => r.test && r.color),
       rulesFirst: !!s.rulesFirst,
       enabled: s.enabled !== false,
+      views: new Set(s.views),
       badge: s.badge !== false,
       // Properties that identify the right note when two share a file name
       lookupProps: [...s.filters, ...s.rules].map((c) => c.prop).filter(Boolean).concat(dateProps),
     };
+  }
+
+  // Which note a card/row shows: a link to the file when the view has one, otherwise the file name
+  noteOf(item, type) {
+    const link = item.querySelector(type === 'list' ? '.bases-list-property .internal-link[data-href]'
+      : '[data-property="file.name"] .internal-link[data-href]');
+    if (link) return { path: link.getAttribute('data-href') };
+    const titleEl = item.querySelector('[data-property="file.name"] .bases-rendered-value');
+    const title = titleEl ? titleEl.textContent.trim().replace(/\.md$/i, '') : '';
+    return title ? { title } : null;
+  }
+
+  frontmatterOf(note, ctx) {
+    if (note.path) {
+      const f = this.app.vault.getAbstractFileByPath(note.path) || this.app.metadataCache.getFirstLinkpathDest(note.path, '');
+      return f ? (this.app.metadataCache.getFileCache(f) || {}).frontmatter : undefined;
+    }
+    return this.resolveFrontmatter(note.title, ctx);
   }
 
   resolveFrontmatter(title, ctx) {
@@ -379,20 +508,71 @@ module.exports = class BasesKanbanCardColors extends Plugin {
       // Skip boards in background tabs; they're checked when you switch to them
       if (!el.isShown()) continue;
       const where = this.where(el);
-      el.querySelectorAll('.bases-kanban-card').forEach((card) => this.checkCard(card, ctx, where));
+      el.querySelectorAll(ITEM_SEL).forEach((card) => this.checkCard(card, ctx, where));
+      const inProps = !!(this.boardInfo.get(el) || {}).props;
+      el.querySelectorAll(inProps ? PROP_PILL_SEL : PILL_SEL).forEach((x) => this.paintPill(x));
     }
   }
 
+  // Pill colors, prepared once: custom colors by "property|value" and by value alone
+  getPillMap() {
+    if (!this.pillMap) {
+      const byProp = new Map();
+      const any = new Map();
+      for (const c of this.settings.pillColors || []) {
+        const v = String(c.value || '').trim().toLowerCase();
+        if (!v || !c.color) continue;
+        const p = String(c.prop || '').trim().toLowerCase();
+        if (p) byProp.set(p + '|' + v, pillPaint(c.color)); else any.set(v, pillPaint(c.color));
+      }
+      this.pillMap = { byProp, any, auto: new Map() };
+    }
+    return this.pillMap;
+  }
+
+  // Color one pill: a custom color for this property, then any property, then the automatic color
+  paintPill(el) {
+    const s = this.settings;
+    let paint = null;
+    const text = s.pillsEnabled ? pillText(el) : '';
+    if (text) {
+      const m = this.getPillMap();
+      const v = text.toLowerCase();
+      const holder = el.closest('[data-property], [data-property-key]');
+      const prop = holder ? (holder.getAttribute('data-property') || holder.getAttribute('data-property-key') || '')
+        .replace(/^note\./, '').toLowerCase() : '';
+      paint = (prop && m.byProp.get(prop + '|' + v)) || m.any.get(v) || null;
+      if (!paint && s.pillAuto) {
+        if (!m.auto.has(text)) { const a = autoColor(text); m.auto.set(text, a && pillPaint(a)); }
+        paint = m.auto.get(text);
+      }
+    }
+    // Only touch the pill when its colors actually change
+    const st = el.style;
+    if (st.getPropertyValue('--koh-pill-bg') === (paint ? paint.bg : '') &&
+      st.getPropertyValue('--koh-pill-fg') === (paint ? paint.fg : '')) return;
+    if (paint) {
+      el.addClass('koh-pill');
+      st.setProperty('--koh-pill-bg', paint.bg);
+      st.setProperty('--koh-pill-fg', paint.fg);
+    } else {
+      el.removeClass('koh-pill');
+      el.style.removeProperty('--koh-pill-bg');
+      el.style.removeProperty('--koh-pill-fg');
+    }
+  }
+
+  // Color one card/row (Kanban card, Cards card, table row or list item) and give it its badge
   checkCard(card, ctx, where) {
-    const titleEl = card.querySelector('[data-property="file.name"] .bases-rendered-value');
-    const title = titleEl ? titleEl.textContent.trim() : '';
+    const type = itemType(card);
+    const note = ctx.views.has(type) ? this.noteOf(card, type) : null;
     let style = null;
-    if (title) {
+    if (note) {
       // The same note can be colored differently on different boards, so the board is part of the key
-      const key = (where ? where.base : '') + '\n' + title;
+      const key = (where ? where.base : '') + '\n' + (note.path || note.title);
       style = this.styleCache.get(key);
       if (style === undefined) {
-        style = this.getStyle(this.resolveFrontmatter(title, ctx), ctx, where);
+        style = this.getStyle(this.frontmatterOf(note, ctx), ctx, where);
         this.styleCache.set(key, style);
       }
     }
@@ -402,22 +582,33 @@ module.exports = class BasesKanbanCardColors extends Plugin {
       const want = c === cls;
       if (card.classList.contains(c) !== want) card.classList.toggle(c, want);
     }
+    if (card.classList.contains(MARK) !== !!cls) card.classList.toggle(MARK, !!cls);
     const color = style && style.color ? style.color : '';
     if (card.style.getPropertyValue('--koh-rule-color') !== color) {
       if (color) card.style.setProperty('--koh-rule-color', color);
       else card.style.removeProperty('--koh-rule-color');
     }
-    // Bottom-right badge ("Due: 3 days"); only touched when its text changes
-    const text = style && style.badge ? style.badge : '';
-    let badge = card.querySelector(':scope > .koh-badge');
+    // Badge ("Due: 3 days"): a card's bottom-right corner, the end of a table row's name cell,
+    // or the end of a list line. Only touched when its text changes.
+    const host = type === 'table' ? card.querySelector('.bases-td[data-property="file.name"]')
+      : type === 'list' ? card.querySelector('.bases-list-item-properties') : card;
+    const text = style && style.badge && host ? style.badge : '';
+    let badge = host ? host.querySelector(':scope > .koh-badge') : null;
     if (text) {
       if (!badge) {
-        badge = card.createDiv({ cls: 'koh-badge' });
+        badge = host.createDiv({ cls: 'koh-badge' + (type === 'list' ? ' koh-badge-inline' : type === 'table' ? ' koh-badge-cell' : '') });
         // Safeguard: if a future Obsidian update stops positioning cards, keep the badge inside its card
-        if (getComputedStyle(card).position === 'static') card.addClass('koh-positioned');
+        if (type !== 'list' && getComputedStyle(host).position === 'static') host.addClass('koh-positioned');
       }
-      if (badge.textContent !== text) badge.textContent = text;
-    } else if (badge) badge.remove();
+      if (badge.textContent !== text) {
+        badge.textContent = text;
+        // Table cells: keep the note name from running under the badge
+        if (type === 'table') { host.addClass('koh-has-badge'); host.style.setProperty('--koh-badge-w', badge.offsetWidth + 10 + 'px'); }
+      }
+    } else if (badge) {
+      badge.remove();
+      if (type === 'table') { host.removeClass('koh-has-badge'); host.style.removeProperty('--koh-badge-w'); }
+    }
   }
 };
 
@@ -491,12 +682,44 @@ class KohSettingTab extends PluginSettingTab {
 
   // ----- Building blocks -----
 
-  // A section: an Obsidian-style heading (optionally with its own controls) followed by rows
-  section(title, desc, addControls) {
-    const el = this.containerEl.createDiv({ cls: 'koh-section' });
+  // A top-level group ("Card colors", "Property/tag colors"): a large heading with an on/off switch.
+  // It collapses like a section, and its contents fade while the switch is off.
+  group(key, title, desc, isOn, setOn) {
+    const el = this.containerEl.createDiv({ cls: 'koh-top' });
     const head = new Setting(el).setName(title).setHeading();
     if (desc) head.setDesc(desc);
-    if (addControls) addControls(head);
+    head.settingEl.addClass('koh-top-head');
+    const body = el.createDiv({ cls: 'koh-top-body' });
+    const fade = () => body.toggleClass('koh-off', !isOn());
+    head.addToggle((t) => t.setValue(isOn()).setTooltip('Turn on or off')
+      .onChange((v) => { setOn(v); fade(); }));
+    fade();
+    this.makeCollapsible(el, head, key);
+    return body;
+  }
+
+  // Clicking a heading collapses or expands its block; the choice is remembered
+  makeCollapsible(el, head, key) {
+    const s = this.plugin.settings;
+    head.settingEl.addClass('koh-section-head');
+    const arrow = head.nameEl.createSpan({ cls: 'koh-chevron' });
+    head.nameEl.prepend(arrow);
+    setIcon(arrow, 'chevron-down');
+    const apply = () => el.toggleClass('koh-collapsed', !!s.collapsed[key]);
+    apply();
+    head.infoEl.addEventListener('click', () => {
+      s.collapsed[key] = !s.collapsed[key];
+      apply();
+      this.plugin.saveToDisk(); // layout only, so no need to recheck cards
+    });
+  }
+
+  // A collapsible section inside a group: a heading followed by rows sharing one panel
+  section(parent, key, title, desc) {
+    const el = parent.createDiv({ cls: 'koh-section' });
+    const head = new Setting(el).setName(title).setHeading();
+    if (desc) head.setDesc(desc);
+    this.makeCollapsible(el, head, key);
     // The section's rows share one panel, separated by thin lines
     return el.createDiv({ cls: 'koh-group' });
   }
@@ -544,6 +767,25 @@ class KohSettingTab extends PluginSettingTab {
     return box;
   }
 
+  // A property name box that suggests the vault's property names
+  propInput(row, c, lookups, placeholder) {
+    const t = new TextComponent(row).setPlaceholder(placeholder).setValue(c.prop || '');
+    t.inputEl.addClass('koh-row-prop');
+    t.onChange((v) => { c.prop = v.trim(); this.save(); });
+    new ListSuggest(this.app, t.inputEl, (q) => matches(lookups.props(), q), (v) => { c.prop = v; t.setValue(v); this.save(); });
+    t.inputEl.addEventListener('focus', () => t.inputEl.dispatchEvent(new Event('input')));
+  }
+
+  // A value box that suggests values already used for the chosen property
+  valueInput(row, c, lookups) {
+    const t = new TextComponent(row).setPlaceholder('Value').setValue(c.value || '');
+    t.inputEl.addClass('koh-row-value');
+    t.onChange((v) => { c.value = v; this.save(); });
+    new ListSuggest(this.app, t.inputEl, () => matches(c.prop ? lookups.values(c.prop) : [], t.inputEl.value.trim().toLowerCase()),
+      (v) => { c.value = v; t.setValue(v); this.save(); });
+    t.inputEl.addEventListener('focus', () => t.inputEl.dispatchEvent(new Event('input')));
+  }
+
   // One rule or filter row, written like a sentence:
   //   rule:   When [Owner] [is] [Kate] -> (color)
   //           [x] Follow the card filter   In [bases]   up down delete
@@ -556,11 +798,7 @@ class KohSettingTab extends PluginSettingTab {
       row.empty();
       if (isRule) row.createSpan({ cls: 'koh-word', text: 'When' });
 
-      const prop = new TextComponent(row).setPlaceholder('Property').setValue(c.prop || '');
-      prop.inputEl.addClass('koh-row-prop');
-      prop.onChange((v) => { c.prop = v.trim(); this.save(); });
-      new ListSuggest(this.app, prop.inputEl, (q) => matches(lookups.props(), q), (v) => { c.prop = v; prop.setValue(v); this.save(); });
-      prop.inputEl.addEventListener('focus', () => prop.inputEl.dispatchEvent(new Event('input')));
+      this.propInput(row, c, lookups, 'Property');
 
       const op = new DropdownComponent(row);
       for (const [k, label] of Object.entries(OPS)) op.addOption(k, label);
@@ -570,28 +808,23 @@ class KohSettingTab extends PluginSettingTab {
         render(); // the value box changes shape ("is any of" uses pills, "is empty" has none)
       });
 
-      const suggestValues = (q) => matches(c.prop ? lookups.values(c.prop) : [], q);
       if (c.op === 'isAnyOf') {
-        const box = this.pillBox(row, () => splitList(c.value), (l) => { c.value = l.join(', '); this.save(); }, 'Add a value…', suggestValues);
-        box.addClass('koh-row-pills');
+        this.pillBox(row, () => splitList(c.value), (l) => { c.value = l.join(', '); this.save(); }, 'Add a value…',
+          (q) => matches(c.prop ? lookups.values(c.prop) : [], q)).addClass('koh-row-pills');
       } else if (!NO_VALUE.has(c.op)) {
-        const val = new TextComponent(row).setPlaceholder('Value').setValue(c.value || '');
-        val.inputEl.addClass('koh-row-value');
-        val.onChange((v) => { c.value = v; this.save(); });
-        new ListSuggest(this.app, val.inputEl, () => suggestValues(val.inputEl.value.trim().toLowerCase()), (v) => { c.value = v; val.setValue(v); this.save(); });
-        val.inputEl.addEventListener('focus', () => val.inputEl.dispatchEvent(new Event('input')));
+        this.valueInput(row, c, lookups);
       }
 
       if (isRule) {
         row.createSpan({ cls: 'koh-word', text: '→' });
-        new ColorComponent(row).setValue(c.color).onChange((v) => { c.color = v; this.save(); });
+        this.colorPicker(row, () => c.color, (v) => { c.color = v; this.save(); }, 'card');
         // Second line: filter checkbox on the left, move and delete buttons on the right
         const foot = row.createDiv({ cls: 'koh-row-foot' });
-        const check = foot.createEl('label', { cls: 'koh-check', attr: { title: 'Only color cards that pass the card filter' } });
+        const check = foot.createEl('label', { cls: 'koh-check', attr: { title: 'Only color cards/rows that pass the filter' } });
         const box = check.createEl('input', { type: 'checkbox' });
         box.checked = c.useFilter !== false;
         box.addEventListener('change', () => { c.useFilter = box.checked; this.save(); });
-        check.appendText('Follow the card filter');
+        check.appendText('Follow the filter');
         foot.createSpan({ cls: 'koh-word koh-on', text: 'In' });
         this.scopeBox(foot, c, lookups);
 
@@ -605,6 +838,79 @@ class KohSettingTab extends PluginSettingTab {
         new ExtraButtonComponent(tools).setIcon('trash-2').setTooltip('Delete condition').onClick(() => { list.splice(i, 1); this.save(); this.display(); });
       }
     };
+    render();
+  }
+
+  // A color button that opens a row of theme-color swatches, plus "Custom" for any other color.
+  // kind 'card' previews a tinted card; 'pill' previews a value pill with readable text.
+  colorPicker(parent, get, set, kind) {
+    const wrap = parent.createDiv({ cls: 'koh-color koh-color-' + kind });
+    // Swatches are plain elements rather than <button>s so themes that restyle buttons leave them alone
+    const swatch = (parent, label, onClick) => {
+      const el = parent.createDiv({ cls: 'koh-swatch', attr: { role: 'button', tabindex: '0', 'aria-label': label } });
+      el.addEventListener('click', onClick);
+      el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } });
+      return el;
+    };
+    let tone = 'vibrant'; // the tone tab being shown
+    const btn = swatch(wrap, '', () => {
+      if (pop.isShown()) return close();
+      const cur = get(); // open on the current color's tab
+      tone = parseTheme(cur) ? parseTheme(cur).tone : distinctName(cur) ? 'distinct' : tone;
+      render();
+      pop.show();
+      doc.addEventListener('mousedown', onDown, true);
+      doc.addEventListener('keydown', onKey, true);
+    });
+    const pop = wrap.createDiv({ cls: 'koh-swatches' });
+    pop.hide();
+    const paint = (el, c) => {
+      el.style.setProperty('--koh-c', cssColor(c));
+      if (kind === 'pill') el.style.setProperty('--koh-fg', textOn(realColor(c)));
+    };
+    const doc = wrap.ownerDocument;
+    const onDown = (e) => { if (!wrap.contains(e.target)) close(); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+    const close = () => {
+      pop.hide();
+      doc.removeEventListener('mousedown', onDown, true);
+      doc.removeEventListener('keydown', onKey, true);
+    };
+    const pick = (c) => { set(c); render(); };
+
+    const render = () => {
+      const cur = get();
+      paint(btn, cur);
+      if (kind === 'pill') btn.setText('Aa');
+      btn.setAttr('aria-label', colorLabel(cur));
+      pop.empty();
+      // Tone tabs: Vibrant, Muted, Pastel, Deep, Distinct
+      const tabs = pop.createDiv({ cls: 'koh-tones' });
+      for (const [key, label] of Object.entries(TONES)) {
+        const tab = tabs.createDiv({ cls: 'koh-tone', text: label, attr: { role: 'button', tabindex: '0' } });
+        tab.toggleClass('is-active', key === tone);
+        const choose = () => { tone = key; render(); };
+        tab.addEventListener('click', choose);
+        tab.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(); } });
+      }
+      if (tone === 'distinct') pop.createDiv({ cls: 'koh-tone-note', text: 'Colors chosen to stay easy to tell apart, including for color blindness. They stay the same in every theme.' });
+      const grid = pop.createDiv({ cls: 'koh-swatch-grid' });
+      const colors = tone === 'distinct' ? Object.keys(DISTINCT) : THEME_COLORS.map((name) => themeColor(tone, name));
+      for (const c of colors) {
+        const sw = swatch(grid, colorLabel(c), () => { pick(c); close(); });
+        if (kind === 'pill') sw.setText('Aa');
+        paint(sw, c);
+        sw.toggleClass('is-selected', String(cur).toLowerCase() === c);
+      }
+      // Custom: the full color wheel, for anything the theme colors don't cover
+      const custom = grid.createEl('label', { cls: 'koh-swatch koh-swatch-custom', attr: { 'aria-label': 'Custom color' } });
+      custom.toggleClass('is-selected', !isThemeColor(cur) && !distinctName(cur));
+      const input = custom.createEl('input', { type: 'color' });
+      input.value = realColor(cur);
+      input.addEventListener('input', () => { set(input.value); paint(btn, input.value); });
+      input.addEventListener('change', () => { pick(input.value); close(); });
+    };
+
     render();
   }
 
@@ -645,8 +951,56 @@ class KohSettingTab extends PluginSettingTab {
       },
     };
 
+    // A friendly greeting with today's day, refreshed each time settings open
+    containerEl.createDiv({ cls: 'koh-greeting', text: 'Happy ' + moment().format('dddd') + ' 🙂' });
+
+    // ===== Card/row colors =====
+    const cards = this.group('cards', 'Card/row colors', 'Color whole cards/rows by due date or by property.',
+      () => s.enabled !== false, (v) => { s.enabled = v; save(); });
+
+    // ----- Which view types -----
+    const viewsPanel = cards.createDiv({ cls: 'koh-group koh-views-panel' });
+    const viewsRow = new Setting(viewsPanel).setName('Color in these views')
+      .setDesc('Tag colors work in every view.');
+    const chips = viewsRow.controlEl.createDiv({ cls: 'koh-chips' });
+    for (const [key, label] of Object.entries(VIEW_TYPES)) {
+      const chip = chips.createDiv({ cls: 'koh-chip', text: label, attr: { role: 'button', tabindex: '0', 'aria-pressed': 'false' } });
+      const paint = () => {
+        const on = s.views.includes(key);
+        chip.toggleClass('is-on', on);
+        chip.setAttr('aria-pressed', String(on));
+      };
+      const flip = () => {
+        s.views = s.views.includes(key) ? s.views.filter((v) => v !== key) : [...s.views, key];
+        paint();
+        save();
+      };
+      chip.addEventListener('click', flip);
+      chip.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } });
+      paint();
+    }
+
+    // ----- Filter -----
+    const filter = this.section(cards, 'filter', 'Which cards/rows can be colored',
+      'The filter. Due-date rules always use it; property rules can opt in.');
+    // The filter applies whenever it has at least one condition
+    if (s.filters.length) {
+      const match = new Setting(filter).setName('Color only cards/rows matching');
+      match.addDropdown((d) => d.addOption('all', 'all').addOption('any', 'any')
+        .setValue(s.filterMatch).onChange((v) => { s.filterMatch = v; save(); }));
+      match.controlEl.createSpan({ cls: 'koh-word', text: 'of these conditions' });
+    } else {
+      this.note(filter, 'No conditions yet, so every card/row can be colored.');
+    }
+    s.filters.forEach((_, i) => this.conditionRow(filter, s.filters, i, lookups, false));
+    this.addButton(filter, 'Add condition', () => {
+      s.filters.push({ prop: '', op: 'is', value: '' });
+      save();
+      this.display();
+    });
+
     // ----- Due-date rules -----
-    const dates = this.section('Rules by due date', 'Color cards by how close a date is.');
+    const dates = this.section(cards, 'dates', 'Rules by due date', 'Color cards/rows by how close a date is.');
     const dateProps = new Setting(dates).setName('Date properties').setDesc('Multiple dates: the earliest one sets the color.');
     dateProps.settingEl.addClass('koh-pill-setting');
     this.pillBox(dateProps.controlEl, () => splitList(s.dateProperties), (l) => { s.dateProperties = l.join(', '); save(); }, 'Add a property…', (q) => {
@@ -664,12 +1018,12 @@ class KohSettingTab extends PluginSettingTab {
       .setName('Overdue')
       .setDesc('The date has passed.')
       .addToggle((t) => t.setValue(s.overdueEnabled !== false).onChange((v) => { s.overdueEnabled = v; save(); }))
-      .addColorPicker((c) => c.setValue(s.color).onChange((v) => { s.color = v; save(); }));
+      .then((st) => this.colorPicker(st.controlEl, () => s.color, (v) => { s.color = v; save(); }, 'card'));
     new Setting(dates)
       .setName('Due today')
       .setDesc('The date is today.')
       .addToggle((t) => t.setValue(s.todayEnabled).onChange((v) => { s.todayEnabled = v; save(); }))
-      .addColorPicker((c) => c.setValue(s.todayColor).onChange((v) => { s.todayColor = v; save(); }));
+      .then((st) => this.colorPicker(st.controlEl, () => s.todayColor, (v) => { s.todayColor = v; save(); }, 'card'));
     const soon = new Setting(dates).setName('Due soon').setDesc('Set to 0 to include any future date.');
     soon.controlEl.createSpan({ cls: 'koh-word', text: 'in the next' });
     soon.addText((t) => {
@@ -684,65 +1038,72 @@ class KohSettingTab extends PluginSettingTab {
     });
     soon.controlEl.createSpan({ cls: 'koh-word', text: 'days' });
     soon.addToggle((t) => t.setValue(s.soonEnabled).onChange((v) => { s.soonEnabled = v; save(); }));
-    soon.addColorPicker((c) => c.setValue(s.soonColor).onChange((v) => { s.soonColor = v; save(); }));
+    this.colorPicker(soon.controlEl, () => s.soonColor, (v) => { s.soonColor = v; save(); }, 'card');
 
     new Setting(dates)
       .setName('Show due badge')
-      .setDesc('Adds "Due: X days", "Due: Today" or "Overdue: X days" to each card\'s corner.')
+      .setDesc('Adds "Due: X days", "Due: Today" or "Overdue: X days" to each card/row.')
       .addToggle((t) => t.setValue(s.badge !== false).onChange((v) => { s.badge = v; save(); }));
 
     // ----- Property rules -----
-    const rules = this.section('Rules by property', 'Color cards by any property, like a rating or read/unread. First match wins, top to bottom.');
+    const rules = this.section(cards, 'rules', 'Rules by property', 'Color cards/rows by any property, like a rating or read/unread. First match wins, top to bottom.');
     if (!s.rules.length) this.note(rules, 'No rules yet.');
     s.rules.forEach((_, i) => this.conditionRow(rules, s.rules, i, lookups, true));
     this.addButton(rules, 'Add rule', () => {
-      s.rules.push({ prop: '', op: 'is', value: '', color: '#3e63dd', useFilter: true, scope: [] });
+      const used = [s.color, s.todayColor, s.soonColor, ...s.rules.map((r) => r.color)];
+      s.rules.push({ prop: '', op: 'is', value: '', color: nextColor(used), useFilter: true, scope: [] });
       save();
       this.display();
     });
     new Setting(rules)
-      .setName('When a card matches both a due-date rule and a property rule')
+      .setName('When a card/row matches both a due-date rule and a property rule')
       .addDropdown((d) => d.addOption('dates', 'Due date wins').addOption('rules', 'Property wins')
         .setValue(s.rulesFirst ? 'rules' : 'dates').onChange((v) => { s.rulesFirst = v === 'rules'; save(); }));
 
-    // ----- Card filter -----
-    const filter = this.section(
-      'Which cards can be colored',
-      'The card filter. Due-date rules always use it; property rules can opt in.',
-      (h) => h.addToggle((t) => t.setValue(s.filterEnabled).setTooltip('Turn the card filter on or off')
-        .onChange((v) => { s.filterEnabled = v; save(); this.display(); }))
-    );
-    if (s.filterEnabled) {
-      const match = new Setting(filter).setName('Color only cards matching');
-      match.addDropdown((d) => d.addOption('all', 'all').addOption('any', 'any')
-        .setValue(s.filterMatch).onChange((v) => { s.filterMatch = v; save(); }));
-      match.controlEl.createSpan({ cls: 'koh-word', text: 'of these conditions' });
-      if (!s.filters.length) this.note(filter, 'No conditions yet, so every card can be colored.');
-      s.filters.forEach((_, i) => this.conditionRow(filter, s.filters, i, lookups, false));
-      this.addButton(filter, 'Add condition', () => {
-        s.filters.push({ prop: '', op: 'is', value: '' });
-        save();
-        this.display();
-      });
-    } else {
-      this.note(filter, 'Off: every card can be colored.');
-    }
-
     // ----- Appearance -----
-    const look = this.section('Appearance');
-    new Setting(look)
-      .setName('Color cards')
-      .setDesc('Master switch. Also a command: "Turn card coloring on or off".')
-      .addToggle((t) => t.setValue(s.enabled !== false).onChange((v) => { s.enabled = v; save(); }));
+    const look = this.section(cards, 'look', 'Appearance', 'How colored cards/rows look.');
     new Setting(look)
       .setName('Highlight style')
-      .setDesc('How colored cards are marked.')
+      .setDesc('How colored cards/rows are marked.')
       .addDropdown((d) => d.addOption('tint', 'Tint').addOption('border', 'Border only').addOption('stripe', 'Left stripe')
         .setValue(s.highlightStyle || 'tint').onChange((v) => { s.highlightStyle = v; save(); this.display(); }));
     if ((s.highlightStyle || 'tint') === 'tint') new Setting(look)
       .setName('Highlight strength')
       .setDesc('Background tint for every color. Borders always use the full color.')
       .addSlider((sl) => sl.setLimits(5, 60, 5).setValue(s.opacity).setDynamicTooltip().onChange((v) => { s.opacity = v; save(); }));
+
+    // ===== Property/tag colors =====
+    const pillsBody = this.group('pills', 'Property/tag colors', 'Color the value pills in Bases views and note properties, like each client or owner.',
+      () => !!s.pillsEnabled, (v) => { s.pillsEnabled = v; save(); this.plugin.resync(); });
+    const pl = pillsBody.createDiv({ cls: 'koh-group' });
+    new Setting(pl)
+      .setName('Automatic colors')
+      .setDesc('Every value gets its own color, always the same for the same value.')
+      .addToggle((t) => t.setValue(s.pillAuto).onChange((v) => { s.pillAuto = v; save(); }));
+    s.pillColors.forEach((c, i) => {
+      const row = pl.createDiv({ cls: 'setting-item koh-row' });
+      this.propInput(row, c, lookups, 'Any property');
+      row.createSpan({ cls: 'koh-word', text: 'value' });
+      this.valueInput(row, c, lookups);
+      row.createSpan({ cls: 'koh-word', text: '→' });
+      this.colorPicker(row, () => c.color, (v) => { c.color = v; save(); }, 'pill');
+      const tools = row.createDiv({ cls: 'koh-tools' });
+      new ExtraButtonComponent(tools).setIcon('trash-2').setTooltip('Delete color')
+        .onClick(() => { s.pillColors.splice(i, 1); save(); this.display(); });
+    });
+    this.addButton(pl, 'Add custom color', () => {
+      s.pillColors.push({ prop: '', value: '', color: nextColor(s.pillColors.map((x) => x.color)) });
+      save();
+      this.display();
+    });
+    new Setting(pl)
+      .setName('Color properties inside notes')
+      .setDesc('Also color these values in the Properties panel at the top of note pages.')
+      .addToggle((t) => t.setValue(s.pillProps).onChange((v) => { s.pillProps = v; save(); this.plugin.resync(); }));
+    new Setting(pl)
+      .setName('Compact pill shape')
+      .setDesc('Tighter padding and corners. Off: your theme\'s default pill shape.')
+      .addToggle((t) => t.setValue(s.pillShape).onChange((v) => { s.pillShape = v; save(); }));
 
     containerEl.scrollTop = scroll;
   }
