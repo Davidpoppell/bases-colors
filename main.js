@@ -196,7 +196,7 @@ const compile = (c) => {
   };
 };
 
-module.exports = class BasesKanbanCardColors extends Plugin {
+module.exports = class BasesColors extends Plugin {
   async onload() {
     const data = (await this.loadData()) || {};
     this.settings = Object.assign({}, DEFAULTS, data);
@@ -213,7 +213,7 @@ module.exports = class BasesKanbanCardColors extends Plugin {
     this.applyColors();
     this.addSettingTab(new KohSettingTab(this.app, this));
     this.addCommand({
-      id: 'toggle-card-coloring',
+      id: 'toggle-coloring',
       name: 'Turn card/row coloring on or off',
       callback: () => {
         this.settings.enabled = !this.settings.enabled;
