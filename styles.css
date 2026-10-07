@@ -48,26 +48,33 @@ body.koh-style-tint .bases-list-item.koh-hl {
 body.koh-style-border .bases-list-item.koh-hl { box-shadow: inset 0 0 0 2px var(--koh-c); }
 body.koh-style-stripe .bases-list-item.koh-hl { box-shadow: inset 4px 0 0 var(--koh-c); }
 
-/* Due badge: a card's bottom-right corner (cards/cells that are position:static get .koh-positioned) */
+/* Badges (custom badges, then the due badge): a card's bottom-right corner
+   (cards/cells that are position:static get .koh-positioned) */
 .koh-positioned { position: relative; }
-.koh-badge {
+.koh-badges {
   position: absolute; right: 8px; bottom: 8px;
+  display: flex; align-items: center; gap: 4px; pointer-events: none;
+}
+.koh-badge {
   padding: 1px 7px; border-radius: 999px;
-  font-size: var(--font-ui-smaller); line-height: 1.5; white-space: nowrap; pointer-events: none;
+  font-size: var(--font-ui-smaller); line-height: 1.5; white-space: nowrap;
   color: var(--text-muted); background: var(--background-modifier-hover);
 }
 .koh-hl .koh-badge {
   color: var(--text-normal); background: color-mix(in srgb, var(--koh-c) 30%, transparent);
 }
+/* A custom badge with its own color */
+.koh-badge.koh-badge-colored { background: var(--koh-badge-bg); color: var(--koh-badge-fg); }
 /* Tables: at the right end of the name cell; the name stops short of it */
-.koh-badge.koh-badge-cell { bottom: auto; top: 50%; right: 6px; transform: translateY(-50%); line-height: 1.4; }
+.koh-badges.koh-badges-cell { bottom: auto; top: 50%; right: 6px; transform: translateY(-50%); }
+.koh-badges-cell .koh-badge, .koh-badges-inline .koh-badge { line-height: 1.4; }
 .bases-td.koh-has-badge > .bases-table-cell {
   padding-inline-end: var(--koh-badge-w) !important; box-sizing: border-box;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .bases-td.koh-has-badge > .bases-table-cell > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* Lists: at the end of the line */
-.koh-badge.koh-badge-inline { position: static; display: inline-block; margin-inline-start: 8px; vertical-align: middle; line-height: 1.4; }
+.koh-badges.koh-badges-inline { position: static; display: inline-flex; margin-inline-start: 8px; vertical-align: middle; }
 
 /* ---------- Property/tag colors ---------- */
 .multi-select-pill.koh-pill {
@@ -143,6 +150,7 @@ body.koh-pill-shape .value-list-element.koh-pill { padding: 2px 6px; border-radi
   content: ''; position: absolute; top: 0; left: 16px; right: 16px;
   border-top: 1px solid var(--background-modifier-border);
 }
+.koh-group + .koh-group { margin-top: 12px; }
 .koh-note .setting-item-description { padding-top: 0; }
 .koh-add-row .setting-item-info { display: none; }
 .koh-add-row .setting-item-control { justify-content: flex-start; }
@@ -231,3 +239,9 @@ body.koh-pill-shape .value-list-element.koh-pill { padding: 2px 6px; border-radi
 .koh-chip.is-on { color: var(--text-on-accent); background: var(--interactive-accent); border-color: var(--interactive-accent); }
 .koh-chip:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
 .koh-views-panel { margin-bottom: 16px; }
+
+/* "No color" swatch: the plain badge look, with a dashed outline */
+.koh-swatch.koh-swatch-none { background: var(--background-modifier-hover) !important; color: var(--text-muted) !important; border: 1px dashed var(--background-modifier-border-hover, var(--text-faint)) !important; }
+/* Custom badge rows: narrower boxes so the whole rule fits on one line */
+.koh-row input.koh-row-text { width: 6.5em; }
+.koh-row-label input.koh-row-prop, .koh-row-label input.koh-row-value { width: 7.5em; }

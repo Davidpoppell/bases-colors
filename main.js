@@ -23,6 +23,7 @@ const DEFAULTS = {
   enabled: true, // master switch, also toggled by a command
   views: ['kanban'], // view types whose cards/rows get colored: 'kanban', 'cards', 'table', 'list'
   badge: true, // "Due: 3 days" label on each colored card/row
+  labels: [], // custom badges: [{ prop, op, value, text, color }]; empty color = plain
   highlightStyle: 'tint', // 'tint', 'border' or 'stripe'
   opacity: 15,
   collapsed: {}, // settings sections the user has collapsed, by section key
@@ -154,7 +155,7 @@ const todayNum = () => { const n = new Date(); return dayNum(n.getFullYear(), n.
 // Which bases a rule applies to, by base name
 const parseScope = (list) => (Array.isArray(list) ? list : []).map(norm).filter(Boolean);
 const inScope = (scope, where) => !scope.length || (!!where && scope.includes(where.base));
-const isBadge = (n) => n.nodeType === 1 && n.classList.contains('koh-badge');
+const isBadge = (n) => n.nodeType === 1 && (n.classList.contains('koh-badges') || n.classList.contains('koh-badge'));
 const baseName = (path) => String(path || '').replace(/^.*\//, '').replace(/\.base$/i, '');
 
 const getProp = (fm, name) => {
@@ -200,7 +201,7 @@ module.exports = class BasesColors extends Plugin {
   async onload() {
     const data = (await this.loadData()) || {};
     this.settings = Object.assign({}, DEFAULTS, data);
-    for (const k of ['filters', 'rules', 'pillColors']) if (!Array.isArray(this.settings[k])) this.settings[k] = [];
+    for (const k of ['filters', 'rules', 'labels', 'pillColors']) if (!Array.isArray(this.settings[k])) this.settings[k] = [];
     if (!Array.isArray(this.settings.views)) this.settings.views = [...DEFAULTS.views];
     if (!this.settings.collapsed || typeof this.settings.collapsed !== 'object') this.settings.collapsed = {};
     this.index = null;
@@ -261,7 +262,7 @@ module.exports = class BasesColors extends Plugin {
       el.classList.remove(MARK, ...ALL_CLASSES);
       el.style.removeProperty('--koh-rule-color');
     });
-    document.querySelectorAll('.koh-badge').forEach((el) => el.remove());
+    document.querySelectorAll('.koh-badges').forEach((el) => el.remove());
     document.querySelectorAll('.koh-has-badge').forEach((el) => { el.removeClass('koh-has-badge'); el.style.removeProperty('--koh-badge-w'); });
     document.querySelectorAll('.koh-positioned').forEach((el) => el.removeClass('koh-positioned'));
     document.querySelectorAll('.koh-pill').forEach((el) => {
@@ -434,8 +435,13 @@ module.exports = class BasesColors extends Plugin {
       enabled: s.enabled !== false,
       views: new Set(s.views),
       badge: s.badge !== false,
+      // Custom badges: every matching one is shown, next to the due badge
+      labels: s.labels
+        .map((l) => ({ test: compile(l), text: String(l.text || '').trim(),
+          bg: l.color ? cssColor(l.color) : '', fg: l.color ? textOn(realColor(l.color)) : '' }))
+        .filter((l) => l.test && l.text),
       // Properties that identify the right note when two share a file name
-      lookupProps: [...s.filters, ...s.rules].map((c) => c.prop).filter(Boolean).concat(dateProps),
+      lookupProps: [...s.filters, ...s.rules, ...s.labels].map((c) => c.prop).filter(Boolean).concat(dateProps),
     };
   }
 
@@ -497,8 +503,9 @@ module.exports = class BasesColors extends Plugin {
       if (!inScope(r.scope, where)) continue; // rule is limited to other bases
       if ((!r.useFilter || passes) && r.test(fm)) { rule = r; break; } // first matching rule wins
     }
-    if (rule && (ctx.rulesFirst || !dateCls)) return { cls: 'koh-rule', color: rule.color, badge };
-    return dateCls || badge ? { cls: dateCls, badge } : null;
+    const labels = passes ? ctx.labels.filter((l) => l.test(fm)) : []; // custom badges follow the filter
+    if (rule && (ctx.rulesFirst || !dateCls)) return { cls: 'koh-rule', color: rule.color, badge, labels };
+    return dateCls || badge || labels.length ? { cls: dateCls, badge, labels } : null;
   }
 
   scanAll() {
@@ -588,25 +595,36 @@ module.exports = class BasesColors extends Plugin {
       if (color) card.style.setProperty('--koh-rule-color', color);
       else card.style.removeProperty('--koh-rule-color');
     }
-    // Badge ("Due: 3 days"): a card's bottom-right corner, the end of a table row's name cell,
-    // or the end of a list line. Only touched when its text changes.
+    // Badges: custom badges, then the due badge ("Due: 3 days"). They sit in a card's bottom-right corner,
+    // at the end of a table row's name cell, or at the end of a list line, and are only touched when they change.
     const host = type === 'table' ? card.querySelector('.bases-td[data-property="file.name"]')
       : type === 'list' ? card.querySelector('.bases-list-item-properties') : card;
-    const text = style && style.badge && host ? style.badge : '';
-    let badge = host ? host.querySelector(':scope > .koh-badge') : null;
-    if (text) {
-      if (!badge) {
-        badge = host.createDiv({ cls: 'koh-badge' + (type === 'list' ? ' koh-badge-inline' : type === 'table' ? ' koh-badge-cell' : '') });
-        // Safeguard: if a future Obsidian update stops positioning cards, keep the badge inside its card
+    const items = style && host ? [...(style.labels || [])] : [];
+    if (style && host && style.badge) items.push({ text: style.badge, due: true });
+    let box = host ? host.querySelector(':scope > .koh-badges') : null;
+    if (items.length) {
+      if (!box) {
+        box = host.createDiv({ cls: 'koh-badges' + (type === 'list' ? ' koh-badges-inline' : type === 'table' ? ' koh-badges-cell' : '') });
+        // Safeguard: if a future Obsidian update stops positioning cards, keep the badges inside their card
         if (type !== 'list' && getComputedStyle(host).position === 'static') host.addClass('koh-positioned');
       }
-      if (badge.textContent !== text) {
-        badge.textContent = text;
-        // Table cells: keep the note name from running under the badge
-        if (type === 'table') { host.addClass('koh-has-badge'); host.style.setProperty('--koh-badge-w', badge.offsetWidth + 10 + 'px'); }
+      const sig = items.map((x) => x.text + '|' + (x.bg || '')).join('\n');
+      if (box.dataset.sig !== sig) {
+        box.dataset.sig = sig;
+        box.empty();
+        for (const x of items) {
+          const b = box.createSpan({ cls: 'koh-badge', text: x.text });
+          if (x.bg) {
+            b.addClass('koh-badge-colored');
+            b.style.setProperty('--koh-badge-bg', x.bg);
+            b.style.setProperty('--koh-badge-fg', x.fg);
+          }
+        }
+        // Table cells: keep the note name from running under the badges
+        if (type === 'table') { host.addClass('koh-has-badge'); host.style.setProperty('--koh-badge-w', box.offsetWidth + 10 + 'px'); }
       }
-    } else if (badge) {
-      badge.remove();
+    } else if (box) {
+      box.remove();
       if (type === 'table') { host.removeClass('koh-has-badge'); host.style.removeProperty('--koh-badge-w'); }
     }
   }
@@ -790,13 +808,15 @@ class KohSettingTab extends PluginSettingTab {
   //   rule:   When [Owner] [is] [Kate] -> (color)
   //           [x] Follow the card filter   In [bases]   up down delete
   //   filter: [Status] [is any of] [To-Do x][In Progress x]   delete
-  conditionRow(parent, list, i, lookups, isRule) {
+  // mode: 'filter', 'rule', or 'label' (a custom badge: When [Priority] [is] [High] -> show [❗️] (color))
+  conditionRow(parent, list, i, lookups, mode) {
     const c = list[i];
-    const row = parent.createDiv({ cls: 'setting-item koh-row' });
+    const isRule = mode === 'rule', isLabel = mode === 'label';
+    const row = parent.createDiv({ cls: 'setting-item koh-row' + (isLabel ? ' koh-row-label' : '') });
 
     const render = () => {
       row.empty();
-      if (isRule) row.createSpan({ cls: 'koh-word', text: 'When' });
+      if (isRule || isLabel) row.createSpan({ cls: 'koh-word', text: 'When' });
 
       this.propInput(row, c, lookups, 'Property');
 
@@ -833,6 +853,14 @@ class KohSettingTab extends PluginSettingTab {
         new ExtraButtonComponent(tools).setIcon('arrow-up').setTooltip('Move up').setDisabled(i === 0).onClick(() => { if (i > 0) move(i - 1); });
         new ExtraButtonComponent(tools).setIcon('arrow-down').setTooltip('Move down').setDisabled(i === list.length - 1).onClick(() => { if (i < list.length - 1) move(i + 1); });
         new ExtraButtonComponent(tools).setIcon('trash-2').setTooltip('Delete rule').onClick(() => { list.splice(i, 1); this.save(); this.display(); });
+      } else if (isLabel) {
+        row.createSpan({ cls: 'koh-word', text: '→' });
+        const t = new TextComponent(row).setPlaceholder('Badge text').setValue(c.text || '')
+          .onChange((v) => { c.text = v; this.save(); });
+        t.inputEl.addClass('koh-row-text');
+        this.colorPicker(row, () => c.color || '', (v) => { c.color = v; this.save(); }, 'pill', true);
+        const tools = row.createDiv({ cls: 'koh-tools' });
+        new ExtraButtonComponent(tools).setIcon('trash-2').setTooltip('Delete badge').onClick(() => { list.splice(i, 1); this.save(); this.display(); });
       } else {
         const tools = row.createDiv({ cls: 'koh-tools' });
         new ExtraButtonComponent(tools).setIcon('trash-2').setTooltip('Delete condition').onClick(() => { list.splice(i, 1); this.save(); this.display(); });
@@ -843,7 +871,8 @@ class KohSettingTab extends PluginSettingTab {
 
   // A color button that opens a row of theme-color swatches, plus "Custom" for any other color.
   // kind 'card' previews a tinted card; 'pill' previews a value pill with readable text.
-  colorPicker(parent, get, set, kind) {
+  // allowNone adds a "No color" swatch (saved as an empty color).
+  colorPicker(parent, get, set, kind, allowNone) {
     const wrap = parent.createDiv({ cls: 'koh-color koh-color-' + kind });
     // Swatches are plain elements rather than <button>s so themes that restyle buttons leave them alone
     const swatch = (parent, label, onClick) => {
@@ -865,6 +894,8 @@ class KohSettingTab extends PluginSettingTab {
     const pop = wrap.createDiv({ cls: 'koh-swatches' });
     pop.hide();
     const paint = (el, c) => {
+      el.toggleClass('koh-swatch-none', !c);
+      if (!c) { el.style.removeProperty('--koh-c'); el.style.removeProperty('--koh-fg'); return; }
       el.style.setProperty('--koh-c', cssColor(c));
       if (kind === 'pill') el.style.setProperty('--koh-fg', textOn(realColor(c)));
     };
@@ -882,7 +913,7 @@ class KohSettingTab extends PluginSettingTab {
       const cur = get();
       paint(btn, cur);
       if (kind === 'pill') btn.setText('Aa');
-      btn.setAttr('aria-label', colorLabel(cur));
+      btn.setAttr('aria-label', cur ? colorLabel(cur) : 'No color');
       pop.empty();
       // Tone tabs: Vibrant, Muted, Pastel, Deep, Distinct
       const tabs = pop.createDiv({ cls: 'koh-tones' });
@@ -895,6 +926,12 @@ class KohSettingTab extends PluginSettingTab {
       }
       if (tone === 'distinct') pop.createDiv({ cls: 'koh-tone-note', text: 'Colors chosen to stay easy to tell apart, including for color blindness. They stay the same in every theme.' });
       const grid = pop.createDiv({ cls: 'koh-swatch-grid' });
+      if (allowNone) {
+        const none = swatch(grid, 'No color', () => { pick(''); close(); });
+        if (kind === 'pill') none.setText('Aa');
+        paint(none, '');
+        none.toggleClass('is-selected', !cur);
+      }
       const colors = tone === 'distinct' ? Object.keys(DISTINCT) : THEME_COLORS.map((name) => themeColor(tone, name));
       for (const c of colors) {
         const sw = swatch(grid, colorLabel(c), () => { pick(c); close(); });
@@ -904,7 +941,7 @@ class KohSettingTab extends PluginSettingTab {
       }
       // Custom: the full color wheel, for anything the theme colors don't cover
       const custom = grid.createEl('label', { cls: 'koh-swatch koh-swatch-custom', attr: { 'aria-label': 'Custom color' } });
-      custom.toggleClass('is-selected', !isThemeColor(cur) && !distinctName(cur));
+      custom.toggleClass('is-selected', !!cur && !isThemeColor(cur) && !distinctName(cur));
       const input = custom.createEl('input', { type: 'color' });
       input.value = realColor(cur);
       input.addEventListener('input', () => { set(input.value); paint(btn, input.value); });
@@ -992,7 +1029,7 @@ class KohSettingTab extends PluginSettingTab {
     } else {
       this.note(filter, 'No conditions yet, so every card/row can be colored.');
     }
-    s.filters.forEach((_, i) => this.conditionRow(filter, s.filters, i, lookups, false));
+    s.filters.forEach((_, i) => this.conditionRow(filter, s.filters, i, lookups, 'filter'));
     this.addButton(filter, 'Add condition', () => {
       s.filters.push({ prop: '', op: 'is', value: '' });
       save();
@@ -1040,15 +1077,11 @@ class KohSettingTab extends PluginSettingTab {
     soon.addToggle((t) => t.setValue(s.soonEnabled).onChange((v) => { s.soonEnabled = v; save(); }));
     this.colorPicker(soon.controlEl, () => s.soonColor, (v) => { s.soonColor = v; save(); }, 'card');
 
-    new Setting(dates)
-      .setName('Show due badge')
-      .setDesc('Adds "Due: X days", "Due: Today" or "Overdue: X days" to each card/row.')
-      .addToggle((t) => t.setValue(s.badge !== false).onChange((v) => { s.badge = v; save(); }));
 
     // ----- Property rules -----
     const rules = this.section(cards, 'rules', 'Rules by property', 'Color cards/rows by any property, like a rating or read/unread. First match wins, top to bottom.');
     if (!s.rules.length) this.note(rules, 'No rules yet.');
-    s.rules.forEach((_, i) => this.conditionRow(rules, s.rules, i, lookups, true));
+    s.rules.forEach((_, i) => this.conditionRow(rules, s.rules, i, lookups, 'rule'));
     this.addButton(rules, 'Add rule', () => {
       const used = [s.color, s.todayColor, s.soonColor, ...s.rules.map((r) => r.color)];
       s.rules.push({ prop: '', op: 'is', value: '', color: nextColor(used), useFilter: true, scope: [] });
@@ -1059,6 +1092,25 @@ class KohSettingTab extends PluginSettingTab {
       .setName('When a card/row matches both a due-date rule and a property rule')
       .addDropdown((d) => d.addOption('dates', 'Due date wins').addOption('rules', 'Property wins')
         .setValue(s.rulesFirst ? 'rules' : 'dates').onChange((v) => { s.rulesFirst = v === 'rules'; save(); }));
+
+    // ----- Badges -----
+    const badges = this.section(cards, 'badges', 'Badges',
+      'Small labels on each card/row. Badges follow the filter.');
+    new Setting(badges)
+      .setName('Due date badge')
+      .setDesc('Shows "Due: X days", "Due: Today" or "Overdue: X days" on every card/row with a due date.')
+      .addToggle((t) => t.setValue(s.badge !== false).onChange((v) => { s.badge = v; save(); }));
+    // Custom badges get their own panel so they don't read as conditions for the due badge
+    const custom = badges.parentElement.createDiv({ cls: 'koh-group' });
+    new Setting(custom)
+      .setName('Custom badges')
+      .setDesc('Show text or an emoji when a property matches, like ❗️ when Priority is High.');
+    s.labels.forEach((_, i) => this.conditionRow(custom, s.labels, i, lookups, 'label'));
+    this.addButton(custom, 'Add badge', () => {
+      s.labels.push({ prop: '', op: 'is', value: '', text: '', color: '' });
+      save();
+      this.display();
+    });
 
     // ----- Appearance -----
     const look = this.section(cards, 'look', 'Appearance', 'How colored cards/rows look.');
@@ -1108,3 +1160,5 @@ class KohSettingTab extends PluginSettingTab {
     containerEl.scrollTop = scroll;
   }
 }
+
+/* nosourcemap */

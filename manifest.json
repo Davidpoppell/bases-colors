@@ -1,9 +1,9 @@
 {
   "id": "bases-kanban-card-colors",
   "name": "Bases Colors",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "minAppVersion": "1.14.0",
-  "description": "Color Bases cards and rows by due date or by any property, add due-date badges, and color property and tag values.",
+  "description": "Color Bases cards and rows by due date or by any property, add due-date and custom badges, and color property and tag values.",
   "author": "Dippy",
   "isDesktopOnly": false
 }
