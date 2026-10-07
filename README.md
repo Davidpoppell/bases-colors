@@ -2,7 +2,7 @@
 
 Color the cards and rows in Obsidian **Bases** by due date or by any property, show how long until each task is due, add your own badges (like ❗️ for high priority), and give property values like clients or owners their own colors. Works in Kanban, Cards, Table and List views.
 
-![A Bases Kanban board with overdue (red), due-today (blue) and due-soon (yellow) cards, each with a due badge, and colored client and owner tags](https://raw.githubusercontent.com/Davidpoppell/bases-colors/main/images/board.png)
+![A Bases Kanban board with overdue (red), due-today (blue) and due-soon (yellow) cards, due badges, ❗️ badges on high-priority tasks, and colored client and owner tags](https://raw.githubusercontent.com/Davidpoppell/bases-colors/main/images/board.png)
 
 ![The same tasks in a table view, with tinted rows, due badges and colored tags](https://raw.githubusercontent.com/Davidpoppell/bases-colors/main/images/table.png)
 
@@ -43,7 +43,7 @@ A command, "Turn card/row coloring on or off", that you can bind to a hotkey.
 
 ## Settings
 
-<img src="https://raw.githubusercontent.com/Davidpoppell/bases-colors/main/images/settings.png" alt="The Bases Colors settings: card/row colors with the due-date rules open, and property/tag colors" width="560">
+<img src="https://raw.githubusercontent.com/Davidpoppell/bases-colors/main/images/settings.png" alt="The Bases Colors settings: card/row colors with the Badges section open, and property/tag colors" width="560">
 
 ### Card/row colors
 | Setting | What it does |
