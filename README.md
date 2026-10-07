@@ -1,19 +1,27 @@
 # Bases Colors
 
-Color the cards and rows in Obsidian **Bases** by due date or by any property, show how long until each task is due, and give property values like clients or owners their own colors. Works in Kanban, Cards, Table and List views.
+Color the cards and rows in Obsidian **Bases** by due date or by any property, show how long until each task is due, add your own badges (like ❗️ for high priority), and give property values like clients or owners their own colors. Works in Kanban, Cards, Table and List views.
 
-   ![A Bases Kanban board with overdue, due-today and due-soon cards colored, each with a due badge](https://raw.githubusercontent.com/Davidpoppell/bases-kanban-card-colors/main/images/board.png)
+![A Bases Kanban board with overdue (red), due-today (blue) and due-soon (yellow) cards, each with a due badge, and colored client and owner tags](https://raw.githubusercontent.com/Davidpoppell/bases-colors/main/images/board.png)
+
+![The same tasks in a table view, with tinted rows, due badges and colored tags](https://raw.githubusercontent.com/Davidpoppell/bases-colors/main/images/table.png)
+
+*Colors in these screenshots: red for overdue, blue for due today, yellow for due soon. You can pick any colors.*
 
 ## Features
 
 ### Card/row colors
 - **Due-date colors.** Cards/rows turn red when overdue, orange when due today, and yellow when due soon (you choose how many days counts as "soon"). Each color can be changed or turned off.
-- **Due badge.** A small label on each card/row: "Due: 8 days", "Due: Tomorrow", "Due: Today", "Overdue: 3 days".
 - **Rules by property.** Color cards/rows by any property, for example `Rating is 5` → green, `Read is unread` → blue, `Owner is Kate` → purple. Rules are checked top to bottom and the first match wins.
 - **Filter.** Limit which cards/rows can be colored, for example only tasks whose Status is To-Do, In Progress or With Client, so finished work stays plain.
 - **Any view type.** Choose which views get colors: Kanban, Cards, Table and List.
 - **Per-base control.** Apply due-date colors or individual rules only to specific bases.
 - **Highlight styles.** Tint, border only, or a left stripe, with an adjustable tint strength.
+
+### Badges
+Small pills in the corner of each card (or at the end of each table row).
+- **Due date badge.** "Due: 8 days", "Due: Tomorrow", "Due: Today", "Overdue: 3 days".
+- **Custom badges.** Show your own text or emoji when a property matches, for example `Priority is High` → ❗️, or `Status is Waiting` → ⏳. Each badge can be plain or colored.
 
 ### Property/tag colors
 - **Automatic colors.** Every property value (like a client or owner) gets its own color, always the same for the same value.
@@ -35,13 +43,16 @@ A command, "Turn card/row coloring on or off", that you can bind to a hotkey.
 
 ## Settings
 
+<img src="https://raw.githubusercontent.com/Davidpoppell/bases-colors/main/images/settings.png" alt="The Bases Colors settings: card/row colors with the due-date rules open, and property/tag colors" width="560">
+
 ### Card/row colors
 | Setting | What it does |
 |---|---|
 | Color in these views | Which view types get colors: Kanban, Cards, Table, List. |
 | Which cards/rows can be colored | The filter. Choose **all** or **any** of the conditions. Due-date colors always follow it; property rules can opt in. |
-| Rules by due date | Date properties to check (the earliest date wins), which bases to use, the Overdue / Due today / Due soon colors, and the due badge. |
+| Rules by due date | Date properties to check (the earliest date wins), which bases to use, the Overdue / Due today / Due soon colors. |
 | Rules by property | **When** [property] [condition] [value] → color. Conditions: is, is not, is any of, contains, is greater than, is less than, is empty, is not empty. Each rule can follow the filter and be limited to specific bases. |
+| Badges | Turn the due date badge on or off, and add custom badges: **When** [property] [condition] [value] → text or emoji, with an optional color. Badges follow the filter. |
 | Appearance | Highlight style (Tint, Border only, Left stripe) and highlight strength. |
 
 Numbers and dates compare as numbers and dates; text comparisons ignore capitalization and emoji.
